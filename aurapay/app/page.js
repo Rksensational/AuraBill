@@ -25,7 +25,8 @@ async function api(path, opts = {}) {
     if (p) { localStorage.setItem('pin', p); return api(path, opts); }
     throw new Error('PIN required');
   }
-  const j = await r.json();
+  const t = await r.text(); let j;
+  try { j = JSON.parse(t); } catch { throw new Error(`Server error ${r.status} — open Vercel → Logs for details`); }
   if (!r.ok) throw new Error(j.error || 'Request failed');
   return j;
 }
@@ -41,6 +42,8 @@ export default function Home() {
   const [msg, setMsg] = useState('');
   const [filter, setFilter] = useState('All');
   const [cfg, setCfg] = useState(null);
+  const [upiFor, setUpiFor] = useState(null);
+  const [vpaIn, setVpaIn] = useState('');
 
   const load = useCallback(async () => {
     const [b, t] = await Promise.all([
@@ -93,14 +96,20 @@ export default function Home() {
     try { await api('/api/items', { method: 'DELETE', body: JSON.stringify({ kind, id }) }); load(); }
     catch (e) { setMsg('⚠️ ' + e.message); }
   }
-  async function pay(b) {
-    let vpa = b.upi_vpa;
-    if (!vpa) {
-      vpa = prompt(`Payee UPI ID for ${b.title} (e.g. bescom.collection@icici)`);
-      if (!vpa) return;
-      try { await api('/api/items', { method: 'PATCH', body: JSON.stringify({ kind: 'bill', id: b.id, vpa }) }); } catch {}
-    }
-    window.location.href = upiUrl({ ...b, upi_vpa: vpa });
+  const VPA = /^[\w.\-]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,63}$/;
+  const payLink = (b, v) => `/pay?pa=${encodeURIComponent(v)}&pn=${encodeURIComponent(b.title)}&am=${b.amount}&tn=${encodeURIComponent(b.title + ' bill')}`;
+  function pay(b) {
+    if (b.upi_vpa) window.location.href = payLink(b, b.upi_vpa);
+    else { setUpiFor(b); setVpaIn(''); }
+  }
+  async function saveVpa() {
+    const v = vpaIn.trim();
+    if (!VPA.test(v)) return setMsg('⚠️ Enter a valid UPI ID like name@bank');
+    try {
+      await api('/api/items', { method: 'PATCH', body: JSON.stringify({ kind: 'bill', id: upiFor.id, vpa: v }) });
+      const b = upiFor; setUpiFor(null); load(); setMsg('');
+      window.location.href = payLink(b, v);
+    } catch (e) { setMsg('⚠️ ' + e.message); }
   }
   async function openCfg() {
     setCfg({ loading: true });
@@ -180,6 +189,7 @@ export default function Home() {
                 </div>
                 <div className="row">
                   <b style={{ fontSize: 18 }}>{inr(b.amount)}</b>
+                  <button className="x" title="Edit UPI ID" onClick={() => { setUpiFor(b); setVpaIn(b.upi_vpa || ''); }}>✏️</button>
                   <button className="x" onClick={() => remove('bill', b.id)}>🗑</button>
                   <button className="ghost" onClick={() => toggle('bill', b.id, b.status !== 'paid')}>{b.status === 'paid' ? 'Undo' : 'Paid'}</button>
                   {b.status !== 'paid' && <button className="btn" onClick={() => pay(b)}>Pay UPI ↗</button>}
@@ -205,12 +215,23 @@ export default function Home() {
         </div>
       </div>
 
+      {upiFor && (
+        <div className="modal" onClick={() => setUpiFor(null)}>
+          <div className="card" onClick={(e) => e.stopPropagation()}>
+            <b>Payee UPI ID — {upiFor.title}</b>
+            <p className="sub">Format: name@bank (e.g. bescom.collection@icici). Saved for next time.</p>
+            <div className="bar"><input autoFocus value={vpaIn} onChange={(e) => setVpaIn(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveVpa()} placeholder="name@bank" /></div>
+            {msg && <div className="sub" style={{ marginTop: 8 }}>{msg}</div>}
+            <div className="row" style={{ marginTop: 12 }}><button className="btn" onClick={saveVpa}>Save &amp; choose UPI app</button><button className="x" onClick={() => setUpiFor(null)}>Cancel</button></div>
+          </div>
+        </div>)}
+
       {cfg && (
         <div className="modal" onClick={() => setCfg(null)}>
           <div className="card" onClick={(e) => e.stopPropagation()}>
             <div className="row sp"><b>Serverless Configuration</b><button className="x" onClick={() => setCfg(null)}>✕</button></div>
             {cfg.loading ? <p className="sub">Checking…</p> : <>
-              {[['Supabase (DB + Realtime)', cfg.supabase], ['Gemini 3.8 Flash (AI parsing)', cfg.gemini], ['Telegram Bot', cfg.telegram], ['APP_URL (pay links)', cfg.appUrl], ['CRON_SECRET (daily alerts)', cfg.cron], ['APP_PIN (access lock)', cfg.pin]].map(([n, ok]) => (
+              {[['Supabase (DB + Realtime)', cfg.supabase], ['Gemini 2.5 Flash (AI parsing)', cfg.gemini], ['Telegram Bot', cfg.telegram], ['APP_URL (pay links)', cfg.appUrl], ['CRON_SECRET (daily alerts)', cfg.cron], ['APP_PIN (access lock)', cfg.pin]].map(([n, ok]) => (
                 <div key={n} className="item row sp"><span>{n}</span><b className={ok ? 'ok' : 'no'}>{ok ? 'CONFIGURED' : 'MISSING'}</b></div>))}
               <p className="sub">Secrets live in Vercel environment variables, never in the browser.</p>
               <button className="btn" onClick={testTg}>Send Telegram test</button>
