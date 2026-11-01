@@ -22,7 +22,7 @@ export async function parseText(text) {
   if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY missing');
   const prompt = `Today is ${istToday()} (IST, India). Extract every bill/payment obligation (kind "bill") and every to-do (kind "task") from the text below. Text may be an Indian bank/utility SMS (HDFC, SBI, BESCOM, Airtel...) or plain language. Rules: due_date as YYYY-MM-DD (resolve "due in 2 days", "28th Oct", "5th" relative to today; if only a day is given use the next occurrence); due_time as HH:MM 24h if mentioned; amount in INR as a number (strip Rs/₹/commas); category one of Electricity, Cards, Rent, Broadband, Water, Gas, Insurance, Subscription, Tax, Work, Finance, Home, Health, Other; priority urgent if due within 2 days else high/medium/low by context; upi_vpa only if a UPI ID appears in the text. Never invent amounts or dates.\n\nTEXT:\n${text}`;
   const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
     { method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { responseMimeType: 'application/json', responseSchema: SCHEMA, temperature: 0.1 } }) }
